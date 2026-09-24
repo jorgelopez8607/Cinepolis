@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Horario de Funciones - Cinépolis</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+    <div id="app-screen" class="screen active">
+        <header class="app-header">
+            <div class="header-info">
+                <h2><i class="fa-solid fa-clapperboard"></i> Programación de Cine</h2>
+                <span id="active-range-badge" class="badge">Salas 1 - 7</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn-secondary" onclick="toggleTheme()" title="Cambiar Tema">
+                    <i class="fa-solid fa-circle-half-stroke"></i>
+                </button>
+                <button id="btn-back" class="btn-secondary" onclick="window.location.href='index.html'">
+                    <i class="fa-solid fa-file-circle-plus"></i> Cargar otro PDF
+                </button>
+            </div>
+        </header>
+
+        <div class="controls-bar">
+            <div class="filter-group">
+                <select id="sort-select">
+                    <option value="start" selected>Ordenar por Hora de Inicio</option>
+                    <option value="finish">Ordenar por Hora de Término</option>
+                </select>
+            </div>
+        </div>
+
+        <main id="schedule-container" class="cards-grid">
+            <!-- Tarjetas generadas dinámicamente -->
+        </main>
+    </div>
+
+    <!-- Modal Post-Créditos -->
+    <div id="credits-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div class="modal-header">
+                <i class="fa-solid fa-circle-info"></i>
+                <h3 id="modal-movie-title">Título de Película</h3>
+            </div>
+            <div class="modal-body">
+                <p id="credits-info">Cargando información...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/horario.js"></script>
+</body>
+</html>
