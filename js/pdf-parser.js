@@ -1,21 +1,20 @@
-async function parseCinepolisPDF(file, minRoom, maxRoom) {
+async function parseCinepolisPDF(file) {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     
     let allTokens = [];
 
-    // 1. Extraer todos los tokens ORDENADOS por su posición en la página (de arriba a abajo, de izquierda a derecha)
+    // 1. Extraer y ordenar tokens visualmente por coordenadas (Y descendente, X ascendente)
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         
-        // Ordenar ítems visualmente: Primero por Y (vertical descendente) y luego por X (horizontal ascendente)
         const sortedItems = textContent.items.sort((a, b) => {
-            const yDiff = b.transform[5] - a.transform[5]; // Coordenada Y
-            if (Math.abs(yDiff) > 5) { // Si están en líneas verticales distintas
+            const yDiff = b.transform[5] - a.transform[5];
+            if (Math.abs(yDiff) > 5) {
                 return yDiff;
             }
-            return a.transform[4] - b.transform[4]; // Coordenada X (misma línea)
+            return a.transform[4] - b.transform[4];
         });
 
         const pageTokens = sortedItems
@@ -32,72 +31,83 @@ async function parseCinepolisPDF(file, minRoom, maxRoom) {
     let idCounter = 0;
     let currentRoom = null;
 
-    // 2. Recorrer los tokens procesando las funciones en orden real
+    // 2. Procesar tokens para extraes datos
     for (let i = 0; i < allTokens.length; i++) {
         const token = allTokens[i];
         
-        // Comprobar si el token es una SALA (ej. "SALA 2")
         const roomMatch = token.match(roomRegex);
         if (roomMatch) {
             currentRoom = parseInt(roomMatch[1], 10);
             continue;
         }
 
-        // Si la sala está en el rango y encontramos la HORA DE INICIO
-        if (currentRoom && currentRoom >= minRoom && currentRoom <= maxRoom && timeRegex.test(token)) {
-            const startTime = token; // Primera hora detectada: INICIO (ej. 11:20AM)
-            
-            // Buscar la HORA DE TÉRMINO en los siguientes tokens
+        if (currentRoom && timeRegex.test(token)) {
+            const startTime = token;
             let finishTime = "";
             let idx = i + 1;
 
             while (idx < allTokens.length && idx < i + 6) {
                 if (timeRegex.test(allTokens[idx])) {
-                    finishTime = allTokens[idx]; // Segunda hora detectada: TÉRMINO (ej. 1:48PM)
+                    finishTime = allTokens[idx];
                     break;
                 }
                 idx++;
             }
 
             if (finishTime) {
-                i = idx; // Avanzar índice a la hora de término
+                i = idx;
 
                 let status = "Abierto";
-                let movieTitle = "";
+                let titleTokens = [];
                 let format = "DEFAULT";
 
-                // Capturar Estado, Título y Formato
                 let searchIdx = i + 1;
-                while (searchIdx < allTokens.length && searchIdx < i + 8) {
+                while (searchIdx < allTokens.length && searchIdx < i + 15) {
                     const nextToken = allTokens[searchIdx];
 
+                    // Si encontramos la siguiente sala u otra hora, terminamos de leer esta función
                     if (roomRegex.test(nextToken) || timeRegex.test(nextToken)) {
                         break;
+                    }
+
+                    // Ignorar textos basura del pie de página de Vista
+                    if (/^(Programa|de|Proyección|por|Hora|Comienzo|Función|SS002|v\.|ReportFiles|visProjSch\.rpt|Vista|Entertainment|Solutions|Ltd|CINEPOLIS|EL|ROSARIO|\d+\/\d+|\d+\/\d+\/\d+|©)$/i.test(nextToken) || nextToken.includes("D:\\") || nextToken.includes(".rpt")) {
+                        searchIdx++;
+                        continue;
                     }
 
                     if (nextToken === "Abierto" || nextToken === "Cerrado") {
                         status = nextToken;
                     } else if (nextToken === "DEFAULT" || /^(2D|3D|XE|4DX|VIP|MACRO|SUB)$/i.test(nextToken)) {
                         format = nextToken;
-                    } else if (!movieTitle && nextToken.length > 2) {
-                        movieTitle = nextToken;
+                    } else if (nextToken !== "|" && nextToken !== "-") {
+                        titleTokens.push(nextToken);
                     }
                     searchIdx++;
                 }
 
-                if (movieTitle) {
+                let fullTitle = titleTokens.join(" ").trim();
+
+                // Limpieza de seguridad adicional para expresiones de fecha/ruta que vengan unidas
+                fullTitle = fullTitle.replace(/Programa de Proyección.*$/i, '')
+                                     .replace(/D:\\.*$/i, '')
+                                     .replace(/©.*$/i, '')
+                                     .replace(/\d{1,2}\/\d{1,2}\/\d{4}.*$/i, '')
+                                     .trim();
+
+                if (fullTitle) {
                     idCounter++;
                     functionsList.push({
                         id: `fn_${idCounter}`,
                         room: currentRoom,
                         startTime: startTime,
+                        endTime: finishTime,
                         finishTime: finishTime,
                         status: status,
-                        title: movieTitle,
+                        title: fullTitle,
                         format: format,
                         startMinutes: convertTimeToMinutes(startTime),
-                        finishMinutes: convertTimeToMinutes(finishTime),
-                        manualCompleted: false
+                        finishMinutes: convertTimeToMinutes(finishTime)
                     });
                 }
             }
@@ -122,8 +132,7 @@ function convertTimeToMinutes(timeStr) {
 
     let totalMinutes = hours * 60 + minutes;
 
-    // Regla de jornada cinematográfica (10:00 AM a 1:00 AM del día siguiente)
-    if (hours < 10) {
+    if (hours < 8) {
         totalMinutes += 24 * 60;
     }
 

@@ -1,3 +1,6 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getDatabase, ref, set, remove, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
 const firebaseConfig = {
     apiKey: "AIzaSyCE1AtQJwVbE2cxccyJDIbqjHuxv_du98E",
     authDomain: "cinepolis-app-48551.firebaseapp.com",
@@ -9,20 +12,16 @@ const firebaseConfig = {
     measurementId: "G-4JZ2D6QYGT"
 };
 
-if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.database();
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 document.addEventListener('DOMContentLoaded', () => {
-    const savedTheme = localStorage.getItem('cinepolis_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-
     const dropArea = document.getElementById('admin-drop-area');
     const pdfInput = document.getElementById('admin-pdf-file');
     const fileLabel = document.getElementById('admin-file-label');
     const container = document.getElementById('movies-list-container');
     const fileStatus = document.getElementById('file-status');
+    const deleteBtn = document.getElementById('delete-schedule-btn');
 
     if (dropArea && pdfInput) {
         dropArea.addEventListener('click', () => pdfInput.click());
@@ -34,122 +33,238 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const file = e.target.files[0];
             if (fileLabel) fileLabel.textContent = file.name;
-            fileStatus.style.color = "var(--text-muted, #aaa)";
-            fileStatus.textContent = "Procesando PDF, por favor espera...";
+            if (fileStatus) {
+                fileStatus.style.color = "#aaa";
+                fileStatus.textContent = "Procesando PDF y subiendo a Firebase...";
+            }
 
             try {
-                const titles = await extractTitlesFromPDF(file);
-                
-                if (!titles || titles.length === 0) {
-                    fileStatus.style.color = "#ef4444";
-                    fileStatus.textContent = "No se detectaron películas en el PDF.";
-                    container.innerHTML = '';
+                // 1. Extraer funciones completas del PDF
+                const funciones = await parseCinepolisPDF(file);
+
+                if (!funciones || funciones.length === 0) {
+                    if (fileStatus) {
+                        fileStatus.style.color = "#ef4444";
+                        fileStatus.textContent = "No se encontraron funciones en el PDF.";
+                    }
                     return;
                 }
 
-                container.innerHTML = '';
-                
-                // Consultar Firebase para pre-cargar la configuración previa
-                const snapshot = await db.ref('post_credits').once('value');
-                const existingData = snapshot.val() || {};
-
-                titles.forEach((title, index) => {
-                    const movieKey = title.replace(/[.#$/\[\]]/g, "_");
-                    const savedItem = existingData[movieKey] || {};
-                    
-                    const hasCredits = savedItem.hasCredits === true;
-                    const count = savedItem.creditsCount || 1;
-
-                    const card = document.createElement('div');
-                    card.className = 'movie-card';
-                    card.style.cssText = 'padding: 15px; border: 1px solid var(--card-border, #333); border-radius: 10px; background: var(--card-bg, #1e1e1e); margin-bottom: 12px;';
-                    
-                    card.innerHTML = `
-                        <div style="font-weight: bold; font-size: 16px; margin-bottom: 12px; color: var(--text-primary);">${title}</div>
-                        
-                        <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; color: var(--text-muted);">¿Tiene post-créditos?</span>
-                            <label style="cursor: pointer;">
-                                <input type="radio" name="has_credits_${index}" value="no" ${!hasCredits ? 'checked' : ''}> No
-                            </label>
-                            <label style="cursor: pointer;">
-                                <input type="radio" name="has_credits_${index}" value="yes" ${hasCredits ? 'checked' : ''}> Sí
-                            </label>
-                        </div>
-
-                        <div id="count-container-${index}" style="display: ${hasCredits ? 'flex' : 'none'}; align-items: center; gap: 10px; margin-top: 10px; margin-bottom: 15px;">
-                            <span style="font-size: 14px; color: var(--text-muted);">¿Cuántas escenas?</span>
-                            <input type="number" id="count_${index}" min="1" max="5" value="${count}" style="width: 70px; padding: 6px; text-align: center; border-radius: 6px; border: 1px solid var(--card-border, #444); background: var(--input-bg, #2a2a2a); color: var(--text-primary); font-size: 15px;">
-                        </div>
-
-                        <button type="button" class="btn-primary save-btn" style="width: 100%; padding: 10px; border-radius: 6px; cursor: pointer;">
-                            <i class="fa-solid fa-cloud-arrow-up"></i> Guardar en la Nube
-                        </button>
-                    `;
-
-                    // Manejo del visor del input numérico
-                    const radios = card.querySelectorAll(`input[name="has_credits_${index}"]`);
-                    radios.forEach(radio => {
-                        radio.addEventListener('change', (e) => {
-                            const countContainer = card.querySelector(`#count-container-${index}`);
-                            if (countContainer) {
-                                countContainer.style.display = e.target.value === 'yes' ? 'flex' : 'none';
-                            }
-                        });
-                    });
-
-                    // Evento dinámico de guardado (soluciona fallos en la última tarjeta o caracteres especiales)
-                    const saveBtn = card.querySelector('.save-btn');
-                    saveBtn.addEventListener('click', () => {
-                        const isYes = card.querySelector(`input[name="has_credits_${index}"]:checked`).value === 'yes';
-                        const countInput = card.querySelector(`#count_${index}`);
-                        const creditsCount = isYes && countInput ? parseInt(countInput.value, 10) : 0;
-                        
-                        saveSingleMovie(saveBtn, title, movieKey, isYes, creditsCount);
-                    });
-
-                    container.appendChild(card);
+                // 2. Guardar en Firebase Realtime Database
+                await set(ref(db, 'horario_activo'), {
+                    fechaActualizacion: new Date().toLocaleString(),
+                    totalFunciones: funciones.length,
+                    funciones: funciones
                 });
 
-                fileStatus.style.color = "#22c55e";
-                fileStatus.textContent = `¡Listo! Se detectaron ${titles.length} películas únicas.`;
+                if (fileStatus) {
+                    fileStatus.style.color = "#22c55e";
+                    fileStatus.textContent = `¡Éxito! Se publicaron ${funciones.length} funciones en Firebase.`;
+                }
+
+                // 3. Extraer títulos para post-créditos
+                const titles = await extractTitlesFromPDF(file);
+                if (container && titles.length > 0) {
+                    container.innerHTML = '';
+                    
+                    const snapshot = await get(ref(db, 'post_credits'));
+                    const existingData = snapshot.val() || {};
+
+                    titles.forEach((title, index) => {
+                        const movieKey = title.replace(/[.#$/\[\]]/g, "_");
+                        const savedItem = existingData[movieKey] || {};
+                        const hasCredits = savedItem.hasCredits === true;
+                        const count = savedItem.creditsCount || 1;
+
+                        const card = document.createElement('div');
+                        card.className = 'movie-card';
+                        card.style.cssText = 'padding: 15px; border: 1px solid #333; border-radius: 10px; background: #1e1e1e; margin-bottom: 12px;';
+                        
+                        card.innerHTML = `
+                            <div style="font-weight: bold; font-size: 16px; margin-bottom: 12px;">${title}</div>
+                            <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 10px;">
+                                <span>¿Tiene post-créditos?</span>
+                                <label><input type="radio" name="has_credits_${index}" value="no" ${!hasCredits ? 'checked' : ''}> No</label>
+                                <label><input type="radio" name="has_credits_${index}" value="yes" ${hasCredits ? 'checked' : ''}> Sí</label>
+                            </div>
+                            <div id="count-container-${index}" style="display: ${hasCredits ? 'flex' : 'none'}; align-items: center; gap: 10px; margin-bottom: 15px;">
+                                <span>¿Cuántas escenas?</span>
+                                <input type="number" id="count_${index}" min="1" max="5" value="${count}" style="width: 70px; padding: 6px; text-align: center; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff;">
+                            </div>
+                            <button type="button" class="btn-primary save-btn" style="width: 100%; padding: 10px; border-radius: 6px; cursor: pointer;">Guardar Post-Créditos</button>
+                        `;
+
+                        const radios = card.querySelectorAll(`input[name="has_credits_${index}"]`);
+                        radios.forEach(radio => {
+                            radio.addEventListener('change', (ev) => {
+                                const countContainer = card.querySelector(`#count-container-${index}`);
+                                if (countContainer) {
+                                    countContainer.style.display = ev.target.value === 'yes' ? 'flex' : 'none';
+                                }
+                            });
+                        });
+
+                        const saveBtn = card.querySelector('.save-btn');
+                        saveBtn.addEventListener('click', async () => {
+                            const isYes = card.querySelector(`input[name="has_credits_${index}"]:checked`).value === 'yes';
+                            const countInput = card.querySelector(`#count_${index}`);
+                            const creditsCount = isYes && countInput ? parseInt(countInput.value, 10) : 0;
+                            
+                            await set(ref(db, `post_credits/${movieKey}`), {
+                                title: title,
+                                hasCredits: isYes,
+                                creditsCount: creditsCount
+                            });
+                            alert(`Guardado post-créditos para: ${title}`);
+                        });
+
+                        container.appendChild(card);
+                    });
+                }
 
             } catch (error) {
-                console.error("Error al procesar el PDF:", error);
-                fileStatus.style.color = "#ef4444";
-                fileStatus.textContent = "Error al leer el archivo PDF.";
+                console.error("Error al procesar/subir PDF:", error);
+                if (fileStatus) {
+                    fileStatus.style.color = "#ef4444";
+                    fileStatus.textContent = "Error al subir datos a Firebase.";
+                }
             }
         });
     }
+
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', borrarHorarioActivo);
+    }
 });
 
-// Guardado individual en Firebase seguro
-async function saveSingleMovie(btn, title, movieKey, hasCredits, count) {
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
-
-    const movieData = {
-        title: title,
-        hasCredits: hasCredits,
-        creditsCount: count
-    };
-
+export async function borrarHorarioActivo() {
     try {
-        await db.ref(`post_credits/${movieKey}`).set(movieData);
-        btn.style.background = "#22c55e";
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> ¡Actualizado!';
-        setTimeout(() => {
-            btn.style.background = '';
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }, 2000);
+        await remove(ref(db, 'horario_activo'));
+        
+        const container = document.getElementById('movies-list-container');
+        const fileLabel = document.getElementById('admin-file-label');
+        const fileStatus = document.getElementById('file-status');
+        const pdfInput = document.getElementById('admin-pdf-file');
+
+        if (container) container.innerHTML = '';
+        if (fileLabel) fileLabel.textContent = 'Haz clic aquí para seleccionar el PDF';
+        if (pdfInput) pdfInput.value = '';
+        if (fileStatus) {
+            fileStatus.style.color = "#aaa";
+            fileStatus.textContent = "Horario eliminado correctamente de Firebase.";
+        }
+
+        alert("El horario activo ha sido eliminado de Firebase.");
     } catch (error) {
-        console.error("Error en Firebase:", error);
-        alert('Error al guardar en Firebase.');
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+        console.error("Error al borrar horario de Firebase:", error);
+        alert("Error al borrar el horario.");
     }
+}
+window.borrarHorarioActivo = borrarHorarioActivo;
+
+async function parseCinepolisPDF(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let allTokens = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        const sortedItems = textContent.items.sort((a, b) => {
+            const yDiff = b.transform[5] - a.transform[5];
+            if (Math.abs(yDiff) > 5) return yDiff;
+            return a.transform[4] - b.transform[4];
+        });
+
+        const pageTokens = sortedItems
+            .map(item => item.str.trim())
+            .filter(str => str.length > 0);
+        
+        allTokens = allTokens.concat(pageTokens);
+    }
+
+    const functionsList = [];
+    const roomRegex = /^SALA\s+(\d+)$/i;
+    const timeRegex = /^(\d{1,2}:\d{2}\s*(?:AM|PM))$/i;
+
+    let idCounter = 0;
+    let currentRoom = null;
+
+    for (let i = 0; i < allTokens.length; i++) {
+        const token = allTokens[i];
+        
+        const roomMatch = token.match(roomRegex);
+        if (roomMatch) {
+            currentRoom = parseInt(roomMatch[1], 10);
+            continue;
+        }
+
+        if (currentRoom && timeRegex.test(token)) {
+            const startTime = token;
+            let finishTime = "";
+            let idx = i + 1;
+
+            while (idx < allTokens.length && idx < i + 6) {
+                if (timeRegex.test(allTokens[idx])) {
+                    finishTime = allTokens[idx];
+                    break;
+                }
+                idx++;
+            }
+
+            if (finishTime) {
+                i = idx;
+                let status = "Abierto";
+                let titleTokens = [];
+                let format = "DEFAULT";
+
+                let searchIdx = i + 1;
+                while (searchIdx < allTokens.length && searchIdx < i + 15) {
+                    const nextToken = allTokens[searchIdx];
+
+                    if (roomRegex.test(nextToken) || timeRegex.test(nextToken)) break;
+
+                    if (/^(Programa|de|Proyección|por|Hora|Comienzo|Función|SS002|v\.|ReportFiles|visProjSch\.rpt|Vista|Entertainment|Solutions|Ltd|CINEPOLIS|EL|ROSARIO|\d+\/\d+|\d+\/\d+\/\d+|©)$/i.test(nextToken) || nextToken.includes("D:\\") || nextToken.includes(".rpt")) {
+                        searchIdx++;
+                        continue;
+                    }
+
+                    if (nextToken === "Abierto" || nextToken === "Cerrado") {
+                        status = nextToken;
+                    } else if (nextToken === "DEFAULT" || /^(2D|3D|XE|4DX|VIP|MACRO|SUB)$/i.test(nextToken)) {
+                        format = nextToken;
+                    } else if (nextToken !== "|" && nextToken !== "-") {
+                        titleTokens.push(nextToken);
+                    }
+                    searchIdx++;
+                }
+
+                let fullTitle = titleTokens.join(" ").trim()
+                                     .replace(/Programa de Proyección.*$/i, '')
+                                     .replace(/D:\\.*$/i, '')
+                                     .replace(/©.*$/i, '')
+                                     .replace(/\d{1,2}\/\d{1,2}\/\d{4}.*$/i, '')
+                                     .trim();
+
+                if (fullTitle) {
+                    idCounter++;
+                    functionsList.push({
+                        id: `fn_${idCounter}`,
+                        room: currentRoom,
+                        startTime: startTime,
+                        endTime: finishTime,
+                        finishTime: finishTime,
+                        status: status,
+                        title: fullTitle,
+                        format: format
+                    });
+                }
+            }
+        }
+    }
+
+    return functionsList;
 }
 
 async function extractTitlesFromPDF(file) {
@@ -160,10 +275,8 @@ async function extractTitlesFromPDF(file) {
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
-        
         const linesMap = {};
         
-        // Agrupar con margen de tolerancia vertical de 4px
         textContent.items.forEach(item => {
             const y = Math.round(item.transform[5] / 4) * 4;
             if (!linesMap[y]) linesMap[y] = [];
@@ -176,41 +289,26 @@ async function extractTitlesFromPDF(file) {
             const lineItems = linesMap[y].sort((a, b) => a.transform[4] - b.transform[4]);
             const lineText = lineItems.map(i => i.str).join(" ").trim();
 
-            if (
-                !lineText ||
-                lineText.includes("Programa de Proyección") ||
-                lineText.includes("Showing Sessions") ||
-                lineText.includes("Vista Entertainment") ||
-                lineText.includes("ReportFiles") ||
-                /^\d+\/\d+$/.test(lineText)
-            ) {
+            if (!lineText || lineText.includes("Programa de Proyección") || lineText.includes("Showing Sessions") || lineText.includes("Vista Entertainment") || lineText.includes("ReportFiles") || /^\d+\/\d+$/.test(lineText)) {
                 return;
             }
 
-            // 1. Coincidencia principal buscando el estado Abierto/Cerrado
             let statusMatch = lineText.match(/(?:Abierto|Cerrado)\s+(.+)/i);
             let rawTitle = "";
 
             if (statusMatch && statusMatch[1]) {
                 rawTitle = statusMatch[1].trim();
             } else if (/Re\s+Rápido/i.test(lineText)) {
-                // 2. Regla de respaldo explícita si la línea contiene "Re Rápido"
                 const reMatch = lineText.match(/(Re\s+Rápido[^\d]+)/i);
                 if (reMatch) rawTitle = reMatch[1].trim();
             }
 
             if (rawTitle) {
-                // Cortar desde DEFAULT o desde horas de proyección si existen en el renglón
-                let cleanTitle = rawTitle.split(/\bDEFAULT\b/i)[0].trim();
-
-                // Quitar sufijos de formato, idioma o siglas de sala (incluyendo SJ, DOB, SUB, etc.) al FINAL de la cadena
-                cleanTitle = cleanTitle
-                    .replace(/\s+\b(Esp|Sub|SP|2D|3D|XE|4DX|VIP|MACRO|DIGITAL|ATMOS|SJ|DOB|SUB|DIG|IMAX)\b$/gi, "")
+                let cleanTitle = rawTitle.split(/\bDEFAULT\b/i)[0].trim()
                     .replace(/\s+\b(Esp|Sub|SP|2D|3D|XE|4DX|VIP|MACRO|DIGITAL|ATMOS|SJ|DOB|SUB|DIG|IMAX)\b$/gi, "")
                     .replace(/\s+/g, " ")
                     .trim();
 
-                // Limpieza de bordes y guiones sueltos
                 cleanTitle = cleanTitle.replace(/^[\-\:\.]+|[\-\:\.]+$|\(\s*\)/g, "").trim();
 
                 if (cleanTitle.length > 2) {
@@ -221,12 +319,4 @@ async function extractTitlesFromPDF(file) {
     }
 
     return Array.from(titlesSet);
-}
-
-function toggleTheme() {
-    const htmlElem = document.documentElement;
-    const currentTheme = htmlElem.getAttribute('data-theme');
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    htmlElem.setAttribute('data-theme', newTheme);
-    localStorage.setItem('cinepolis_theme', newTheme);
 }

@@ -384,3 +384,237 @@ body {
     margin-bottom: 15px;
     color: var(--accent-gold);
 }
+.admin-container {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.admin-card {
+    background: var(--card-bg, #1e293b);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    text-align: center;
+}
+
+/* Utilidad de Ocultado */
+.hidden {
+    display: none !important;
+}
+
+/* Modal e Interfaz de Contraseña */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content.auth-box {
+    background: var(--card-bg, #1e293b);
+    padding: 2rem;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+    position: relative;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    color: #fff;
+}
+
+.close-modal {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #94a3b8;
+}
+
+.modal-lock-icon {
+    font-size: 2.5rem;
+    color: #3b82f6;
+    margin-bottom: 1rem;
+}
+
+.auth-box input[type="password"] {
+    width: 100%;
+    padding: 0.75rem;
+    margin: 1rem 0;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: white;
+    text-align: center;
+    font-size: 1.1rem;
+    box-sizing: border-box;
+}
+
+.error-msg {
+    color: #ef4444;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.index-container {
+    max-width: 650px;
+    margin: 3rem auto;
+    padding: 0 1rem;
+    text-align: center;
+}
+
+.role-selection {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.role-card {
+    background: var(--card-bg, #1e293b);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 2rem 1rem;
+    cursor: pointer;
+    color: inherit;
+    transition: all 0.2s ease;
+}
+
+.role-card:hover {
+    border-color: #3b82f6;
+    transform: translateY(-3px);
+}
+
+.role-icon {
+    font-size: 3rem;
+    color: #3b82f6;
+    margin-bottom: 1rem;
+}
+
+.halls-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.hall-btn {
+    padding: 1rem;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.no-schedule-box .alert-icon {
+    font-size: 3rem;
+    color: #f59e0b;
+    margin-bottom: 1rem;
+}
+.admin-container {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.admin-card {
+    background: var(--card-bg, #1e293b);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    text-align: center;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.file-drop-area {
+    border: 2px dashed var(--accent-blue);
+    border-radius: 8px;
+    padding: 2rem 1rem;
+    margin: 1.5rem 0;
+    position: relative;
+    cursor: pointer;
+    background: rgba(56, 189, 248, 0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.file-drop-area input[type="file"] {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.pdf-icon {
+    font-size: 2.5rem;
+    color: #ef4444;
+    margin-bottom: 0.5rem;
+}
+
+.file-msg {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.file-name {
+    color: var(--accent-gold);
+    font-size: 15px;
+    word-break: break-word;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+.icon-large {
+    font-size: 2.5rem;
+    color: #3b82f6;
+}
+
+.status-badge.success {
+    display: inline-block;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}

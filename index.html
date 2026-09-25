@@ -3,62 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cargar PDF - Cinépolis</title>
+    <title>Cinépolis - Inicio</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    </script>
+
+    <!-- Firebase SDKs Compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
-    <div id="upload-screen" class="screen active">
-        <div class="upload-card">
-            <button class="theme-toggle-btn" onclick="toggleTheme()" title="Cambiar Tema">
-                <i class="fa-solid fa-circle-half-stroke"></i>
-            </button>
+    <div id="index-screen" class="screen active">
+        <header class="app-header">
+            <div class="header-info">
+                <h2><i class="fa-solid fa-film"></i> Cartelera Interna</h2>
+                <span class="badge">Cinépolis</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn-secondary" onclick="toggleTheme()" title="Cambiar Tema">
+                    <i class="fa-solid fa-circle-half-stroke"></i>
+                </button>
+            </div>
+        </header>
 
-            <div class="brand">
-                <i class="fa-solid fa-film brand-icon"></i>
-                <h1>Procesador de Horarios</h1>
-                <p>Cinépolis - Vista Entertainment Report</p>
+        <main class="index-container">
+            <h2 class="welcome-title">¿Cómo deseas ingresar?</h2>
+
+            <div class="role-selection">
+                <button id="btn-cinepolito" class="role-card">
+                    <i class="fa-solid fa-user-gear role-icon"></i>
+                    <h3>Cinepolito</h3>
+                    <p>Consultar la programación de salas</p>
+                </button>
+
+                <button id="btn-admin" class="role-card">
+                    <i class="fa-solid fa-user-shield role-icon"></i>
+                    <h3>Admin</h3>
+                    <p>Administrar y subir PDF de horarios</p>
+                </button>
             </div>
 
-            <form id="setup-form">
-                <div class="file-drop-area" id="drop-area">
-                    <i class="fa-solid fa-file-pdf pdf-icon"></i>
-                    <span class="file-msg">Arrastra tu archivo PDF aquí o haz clic para seleccionar</span>
-                    <input type="file" id="pdf-file" accept="application/pdf" required>
-                    <div id="file-name" class="file-name"></div>
+            <!-- Selección de Halls -->
+            <div id="halls-section" class="halls-container hidden">
+                <h3>Selecciona tu conjunto de salas:</h3>
+                <div class="halls-buttons">
+                    <button class="btn-primary hall-btn" onclick="selectHall(1, 7)">
+                        <i class="fa-solid fa-door-open"></i> Hall 1 (Salas 1 - 7)
+                    </button>
+                    <button class="btn-primary hall-btn" onclick="selectHall(8, 16)">
+                        <i class="fa-solid fa-door-open"></i> Hall 2 (Salas 8 - 16)
+                    </button>
+                    <button class="btn-primary hall-btn full-width" onclick="selectHall(1, 16)" style="grid-column: 1 / -1;">
+                        <i class="fa-solid fa-layer-group"></i> Hall 1 y 2 (Salas 1 - 16)
+                    </button>
                 </div>
-
-                <div class="room-range-container">
-                    <label><i class="fa-solid fa-door-open"></i> Filtrar Rango de Salas:</label>
-                    <div class="range-inputs">
-                        <div class="input-group">
-                            <span>Desde Sala:</span>
-                            <input type="number" id="room-min" min="1" max="30" value="1" required>
-                        </div>
-                        <div class="input-group">
-                            <span>Hasta Sala:</span>
-                            <input type="number" id="room-max" min="1" max="30" value="7" required>
-                        </div>
-                    </div>
-                </div>
-
-                <button type="submit" id="btn-process" class="btn-primary" disabled>
-                    <i class="fa-solid fa-gears"></i> Cargar y Leer PDF
+                <button class="btn-secondary back-role-btn" onclick="resetView()">
+                    <i class="fa-solid fa-arrow-left"></i> Volver
                 </button>
-            </form>
+            </div>
 
-            <a href="admin.html" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 12px; padding: 12px; background: rgba(255, 255, 255, 0.08); color: var(--text-primary, #ffffff); text-decoration: none; font-weight: 600; border-radius: 8px; border: 1px solid var(--card-border, #444); box-sizing: border-box; transition: background 0.2s;">
-                <i class="fa-solid fa-user-shield"></i> Post Créditos
-            </a>
+            <!-- Mensaje cuando NO hay horario -->
+            <div id="no-schedule-message" class="no-schedule-box hidden">
+                <i class="fa-solid fa-triangle-exclamation alert-icon"></i>
+                <p>El admin aún no sube el horario</p>
+                <button class="btn-secondary back-role-btn" onclick="resetView()">
+                    <i class="fa-solid fa-arrow-left"></i> Volver
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Contraseña -->
+    <div id="auth-modal" class="modal-overlay hidden">
+        <div class="modal-content auth-box">
+            <span class="close-modal" onclick="closeAuthModal()">&times;</span>
+            <i class="fa-solid fa-lock modal-lock-icon"></i>
+            <h3>Acceso de Administrador</h3>
+            <p>Ingresa la contraseña para continuar:</p>
+            
+            <form id="auth-form" onsubmit="validatePassword(event)">
+                <input type="password" id="admin-password" placeholder="Contraseña" required autocomplete="off">
+                <p id="auth-error" class="error-msg hidden">Contraseña incorrecta</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeAuthModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Ingresar</button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <script src="js/pdf-parser.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/index.js"></script>
 </body>
 </html>

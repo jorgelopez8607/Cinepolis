@@ -14,176 +14,366 @@ if (!firebase.apps.length) {
 }
 const db = firebase.database();
 
-let parsedMoviesData = [];
+let allFunctions = [];
+let selectedFunctionIndex = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    const savedTheme = localStorage.getItem('cinepolis_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    const urlParams = new URLSearchParams(window.location.search);
+    const minRoom = parseInt(urlParams.get('min'), 10) || 1;
+    const maxRoom = parseInt(urlParams.get('max'), 10) || 20;
 
-    const data = localStorage.getItem('cinepolis_movies');
-    const roomRange = localStorage.getItem('cinepolis_rooms');
-
-    if (!data) {
-        window.location.href = 'index.html';
-        return;
+    const badge = document.getElementById('active-range-badge');
+    if (badge) {
+        badge.textContent = `Salas ${minRoom} - ${maxRoom}`;
     }
 
-    parsedMoviesData = JSON.parse(data);
-
-    const activeRangeBadge = document.getElementById('active-range-badge');
-    if (activeRangeBadge && roomRange) {
-        activeRangeBadge.textContent = roomRange;
-    }
-
-    const sortSelect = document.getElementById('sort-select');
-    if (sortSelect) {
-        sortSelect.addEventListener('change', renderSchedule);
-    }
-
-    renderSchedule();
-});
-
-function getCurrentTimeInMinutes() {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-}
-
-function renderSchedule() {
     const scheduleContainer = document.getElementById('schedule-container');
+    const bannerContainer = document.getElementById('delay-banner-container');
     const sortSelect = document.getElementById('sort-select');
 
-    if (!scheduleContainer) return;
-
-    const sortBy = sortSelect ? sortSelect.value : 'finish';
-    const currentDeviceMinutes = getCurrentTimeInMinutes();
-
-    let filtered = [...parsedMoviesData];
-
-    filtered.sort((a, b) => {
-        if (sortBy === 'start') return a.startMinutes - b.startMinutes;
-        return a.finishMinutes - b.finishMinutes;
-    });
-
-    scheduleContainer.innerHTML = '';
-
-    if (filtered.length === 0) {
-        scheduleContainer.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center;">No hay funciones registradas.</p>';
-        return;
+    // 1. Cargar y restaurar preferencia de ordenamiento desde localStorage
+    const savedSort = localStorage.getItem('cinepolis_sort_preference');
+    if (savedSort && sortSelect) {
+        sortSelect.value = savedSort;
     }
 
-    filtered.forEach(item => {
-        const isFinishedByTime = currentDeviceMinutes >= item.finishMinutes;
-        const isCompleted = item.manualCompleted || isFinishedByTime;
-
-        const card = document.createElement('div');
-        card.className = `movie-card ${isCompleted ? 'completed' : ''}`;
-        
-        card.innerHTML = `
-            <div class="card-top">
-                <span class="room-number">SALA ${item.room}</span>
-                <span class="format-tag">${item.format}</span>
-                <button class="check-btn ${isCompleted ? 'active' : ''}" onclick="toggleCompleted('${item.id}')" title="Marcar/Desmarcar estado">
-                    <i class="fa-solid fa-circle-check"></i>
-                </button>
-            </div>
-            <div class="movie-title">${item.title}</div>
-            <div class="time-info">
-                <div class="time-item">
-                    <span>INICIO</span>
-                    <strong>${item.startTime}</strong>
-                </div>
-                <div class="time-item">
-                    <span>TERMINA</span>
-                    <strong>${item.finishTime}</strong>
-                </div>
-            </div>
-            <button class="post-credits-btn" onclick="checkCredits('${item.title.replace(/'/g, "\\'")}')">
-                <i class="fa-solid fa-film"></i> Ver Post-Créditos
-            </button>
-        `;
-        scheduleContainer.appendChild(card);
-    });
-}
-
-function toggleCompleted(itemId) {
-    const item = parsedMoviesData.find(m => m.id === itemId);
-    if (item) {
-        item.manualCompleted = !item.manualCompleted;
-        localStorage.setItem('cinepolis_movies', JSON.stringify(parsedMoviesData));
-        renderSchedule();
+    // 2. Escuchar cambios en el selector de ordenamiento
+    if (sortSelect) {
+        sortSelect.addEventListener('change', () => {
+            localStorage.setItem('cinepolis_sort_preference', sortSelect.value);
+            sortAndRender();
+        });
     }
-}
 
-async function checkCredits(movieTitle) {
-    const modal = document.getElementById('credits-modal');
-    const titleElem = document.getElementById('modal-movie-title');
-    const infoElem = document.getElementById('credits-info');
+    function addMinutesToTimeStr(timeStr, minsToAdd) {
+        if (!timeStr || !minsToAdd) return timeStr;
+        const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return timeStr;
 
-    titleElem.textContent = movieTitle;
-    infoElem.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Consultando en la nube...';
-    modal.style.display = "flex";
+        let hours = parseInt(match[1], 10);
+        let minutes = parseInt(match[2], 10);
+        const period = match[3].toUpperCase();
 
-    // 1. Limpiar el título removiendo etiquetas (Esp, Sub, 3D, XE, blah blah blah.) igual que en admin.js
-    let cleanTitle = movieTitle
-    .replace(/\s+(Esp|Sub|3D|XE)\b/gi, "")
-    .replace(/\s+SP\b/gi, "")
-    .trim();
+        if (period === "PM" && hours < 12) hours += 12;
+        if (period === "AM" && hours === 12) hours = 0;
 
-    // 2. Generar la clave sanitizada para Firebase
-    const movieKey = cleanTitle.replace(/[.#$/\[\]]/g, "_");
+        let totalMins = hours * 60 + minutes + minsToAdd;
 
-    try {
-        const snapshot = await db.ref(`post_credits/${movieKey}`).once('value');
-        const data = snapshot.val();
+        let newHours = Math.floor(totalMins / 60) % 24;
+        let newMins = totalMins % 60;
 
-        if (data) {
-            if (data.hasCredits) {
-                infoElem.innerHTML = `
-                    <div style="text-align: center;">
-                        <i class="fa-solid fa-circle-check" style="color: #22c55e; font-size: 36px; margin-bottom: 10px;"></i>
-                        <p><strong style="color: #22c55e; font-size: 18px;">SÍ TIENE POST-CRÉDITOS</strong></p>
-                        <p style="font-size: 14px; margin-top: 8px;">Tiene <strong>${data.creditsCount}</strong> escena post.</p>
-                    </div>
-                `;
-            } else {
-                infoElem.innerHTML = `
-                    <div style="text-align: center;">
-                        <i class="fa-solid fa-circle-xmark" style="color: #ef4444; font-size: 36px; margin-bottom: 10px;"></i>
-                        <p><strong style="color: #ef4444; font-size: 18px;">NO TIENE POST-CRÉDITOS</strong></p>
-                        <p style="font-size: 12px; margin-top: 5px; color: var(--text-muted);"></p>
-                    </div>
-                `;
+        let newPeriod = newHours >= 12 ? "PM" : "AM";
+        let displayHours = newHours % 12;
+        if (displayHours === 0) displayHours = 12;
+
+        let displayMins = newMins < 10 ? `0${newMins}` : `${newMins}`;
+
+        return `${displayHours}:${displayMins} ${newPeriod}`;
+    }
+
+    function getCinematicMinutes(timeStr) {
+        if (!timeStr) return 0;
+        const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return 0;
+
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const period = match[3].toUpperCase();
+
+        if (period === "PM" && hours < 12) hours += 12;
+        if (period === "AM" && hours === 12) hours = 0;
+
+        let total = hours * 60 + minutes;
+        if (hours < 8) total += 24 * 60;
+
+        return total;
+    }
+
+    function renderBannersAndSchedule(functions) {
+        if (!scheduleContainer) return;
+        scheduleContainer.innerHTML = '';
+        if (bannerContainer) bannerContainer.innerHTML = '';
+
+        // 1. Mapear desfases por Sala
+        const roomDelays = {};
+        allFunctions.forEach(fn => {
+            const roomNum = parseInt(fn.room || fn.sala, 10);
+            if (fn.is_desfasada && fn.desfase_minutos > 0) {
+                roomDelays[roomNum] = Math.max(roomDelays[roomNum] || 0, fn.desfase_minutos);
             }
-        } else {
-            infoElem.innerHTML = `
-                <div style="text-align: center;">
-                    <i class="fa-solid fa-circle-question" style="color: var(--accent-gold); font-size: 36px; margin-bottom: 10px;"></i>
-                    <p><strong>SIN REGISTRO</strong></p>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 5px;">No se ha configurado la información de esta película en el admin.</p>
+        });
+
+        // 2. Renderizar SIEMPRE el Recordatorio superior y los banners de desfase si los hay
+        if (bannerContainer) {
+            // Recordatorio permanente
+            const reminderBox = document.createElement('div');
+            reminderBox.className = 'delay-reminder-note';
+            reminderBox.innerHTML = `
+                <i class="fa-solid fa-clock" style="color: #60a5fa;"></i>
+                <span><strong>Recordatorio:</strong> Procura estar afuera de la sala 10 minutos antes de la hora ajustada.</span>
+            `;
+            bannerContainer.appendChild(reminderBox);
+
+            // Banners individuales por sala desfasada
+            const activeRooms = Object.keys(roomDelays).map(r => parseInt(r, 10)).filter(r => r >= minRoom && r <= maxRoom);
+            activeRooms.forEach(rNum => {
+                const delayMins = roomDelays[rNum];
+                const banner = document.createElement('div');
+                banner.className = 'delay-alert-banner';
+                banner.innerHTML = `
+                    <div class="delay-banner-info">
+                        <i class="fa-solid fa-triangle-exclamation" style="font-size: 18px;"></i>
+                        <span>Sala (${rNum}) tiene un desfase de ${delayMins} minutos</span>
+                    </div>
+                    <button class="btn-cancel-delay" onclick="clearRoomDelay(${rNum})" title="Cancelar desfase y regresar al horario original">
+                        <i class="fa-solid fa-rotate-left"></i> Cancelar
+                    </button>
+                `;
+                bannerContainer.appendChild(banner);
+            });
+        }
+
+        if (!functions || functions.length === 0) {
+            scheduleContainer.innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #888;">
+                    <i class="fa-solid fa-calendar-xmark" style="font-size: 48px; margin-bottom: 15px; display: block; color: #555;"></i>
+                    <p style="font-size: 18px; font-weight: 500;">No hay horarios activos publicados en la nube.</p>
                 </div>
             `;
+            return;
         }
-    } catch (error) {
-        console.error(error);
-        infoElem.innerHTML = "Error al conectar con la base de datos.";
+
+        // 3. Renderizar Tarjetas
+        functions.forEach((item) => {
+            const indexInDb = item._originalIndex;
+            const sala = item.room || item.sala || 'N/A';
+            const roomNum = parseInt(sala, 10);
+            const titulo = item.title || item.titulo || 'Sin Título';
+
+            const originalHoraInicio = item.startTime || item.horaInicio || '--:--';
+            const originalHoraFin = item.endTime || item.finishTime || item.horaFin || '--:--';
+
+            // Atributos separados e independientes
+            const estado = item.estado_funcion || 'normal';
+            const isDesfasada = Boolean(item.is_desfasada);
+            const limpiadaPor = item.limpiada_por || '';
+            const isCleaned = Boolean(limpiadaPor);
+
+            const roomDelay = roomDelays[roomNum] || 0;
+            const isRoomDesfasada = roomDelay > 0;
+
+            const adjustedHoraInicio = isRoomDesfasada ? addMinutesToTimeStr(originalHoraInicio, roomDelay) : originalHoraInicio;
+            const adjustedHoraFin = isRoomDesfasada ? addMinutesToTimeStr(originalHoraFin, roomDelay) : originalHoraFin;
+
+            const cardClasses = [
+                'movie-card',
+                estado !== 'normal' ? 'status-' + estado : '',
+                isRoomDesfasada ? 'has-delay' : '',
+                isCleaned ? 'is-cleaned' : ''
+            ].filter(Boolean).join(' ');
+
+            const card = document.createElement('div');
+            card.className = cardClasses;
+
+            card.innerHTML = `
+                <div class="card-top">
+                    <span class="room-number">
+                        SALA ${sala}
+                        ${isRoomDesfasada ? `<span class="delay-badge">+${roomDelay} MIN DESFASE</span>` : ''}
+                        ${estado === 'cancelada' ? `<span class="delay-badge" style="background:#ef4444; color:#fff;">CANCELADA</span>` : ''}
+                        ${isCleaned ? `<span class="clean-badge"><i class="fa-solid fa-broom"></i> ${limpiadaPor}</span>` : ''}
+                    </span>
+                    <div class="card-actions">
+                        <!-- 1. Palomita (Terminó Bien) -->
+                        <button class="action-btn btn-ok ${estado === 'completada' ? 'active' : ''}" 
+                                onclick="toggleStatus(${indexInDb}, 'completada')" 
+                                title="Función terminada bien">
+                            <i class="fa-solid fa-check"></i>
+                        </button>
+
+                        <!-- 2. Escoba (Limpieza independiente) -->
+                        <button class="action-btn btn-clean ${isCleaned ? 'active' : ''}" 
+                                onclick="handleCleanButtonClick(${indexInDb}, ${isCleaned})" 
+                                title="Registrar limpieza de sala">
+                            <i class="fa-solid fa-broom"></i>
+                        </button>
+
+                        <!-- 3. Flecha (Desfase independiente) -->
+                        <button class="action-btn btn-delay ${isDesfasada ? 'active' : ''}" 
+                                onclick="handleDelayButtonClick(${indexInDb}, ${isDesfasada})" 
+                                title="Registrar/Quitar desfase de minutos">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </button>
+
+                        <!-- 4. X (Cancelar) -->
+                        <button class="action-btn btn-cancel ${estado === 'cancelada' ? 'active' : ''}" 
+                                onclick="toggleStatus(${indexInDb}, 'cancelada')" 
+                                title="Cancelar función">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+                <h3 class="movie-title">${titulo}</h3>
+                <div class="time-info">
+                    <div class="time-item">
+                        <span>HORA INICIAR</span>
+                        <strong>${adjustedHoraInicio}</strong>
+                        ${isRoomDesfasada ? `<span class="time-adjusted">(Orig: ${originalHoraInicio})</span>` : ''}
+                    </div>
+                    <div class="time-item">
+                        <span>HORA TERMINAR</span>
+                        <strong>${adjustedHoraFin}</strong>
+                        ${isRoomDesfasada ? `<span class="time-adjusted">(Orig: ${originalHoraFin})</span>` : ''}
+                    </div>
+                </div>
+            `;
+            scheduleContainer.appendChild(card);
+        });
     }
-}
 
-function toggleTheme() {
-    const htmlElem = document.documentElement;
-    const currentTheme = htmlElem.getAttribute('data-theme');
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    htmlElem.setAttribute('data-theme', newTheme);
-    localStorage.setItem('cinepolis_theme', newTheme);
-}
+    function sortAndRender() {
+        const sortBy = sortSelect ? sortSelect.value : 'start';
 
-document.querySelector('.close-modal')?.addEventListener('click', () => {
-    document.getElementById('credits-modal').style.display = "none";
+        const filteredFunctions = allFunctions
+            .map((fn, idx) => ({ ...fn, _originalIndex: idx }))
+            .filter(fn => {
+                const roomNum = parseInt(fn.room || fn.sala, 10);
+                return roomNum >= minRoom && roomNum <= maxRoom;
+            });
+
+        filteredFunctions.sort((a, b) => {
+            const timeA = sortBy === 'finish' ? (a.endTime || a.finishTime) : a.startTime;
+            const timeB = sortBy === 'finish' ? (b.endTime || b.finishTime) : b.startTime;
+
+            return getCinematicMinutes(timeA) - getCinematicMinutes(timeB);
+        });
+
+        renderBannersAndSchedule(filteredFunctions);
+    }
+
+    // Escuchar Firebase en tiempo real
+    db.ref('horario_activo/funciones').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            allFunctions = Array.isArray(data) ? data : Object.values(data);
+        } else {
+            allFunctions = [];
+        }
+        sortAndRender();
+    });
 });
 
-window.onclick = function(event) {
-    const modal = document.getElementById('credits-modal');
-    if (event.target === modal) {
-        modal.style.display = "none";
+window.clearRoomDelay = function(roomNumber) {
+    const updates = {};
+    allFunctions.forEach((fn, idx) => {
+        const rNum = parseInt(fn.room || fn.sala, 10);
+        if (rNum === roomNumber) {
+            updates[`horario_activo/funciones/${idx}/is_desfasada`] = false;
+            updates[`horario_activo/funciones/${idx}/desfase_minutos`] = 0;
+        }
+    });
+
+    if (Object.keys(updates).length > 0) {
+        db.ref().update(updates);
     }
 };
+
+window.toggleStatus = function(index, statusTarget) {
+    if (index === null || index === undefined) return;
+    const current = allFunctions[index]?.estado_funcion || 'normal';
+    const newStatus = (current === statusTarget) ? 'normal' : statusTarget;
+
+    db.ref(`horario_activo/funciones/${index}`).update({
+        estado_funcion: newStatus
+    });
+};
+
+window.handleCleanButtonClick = function(index, isCleaned) {
+    if (isCleaned) {
+        db.ref(`horario_activo/funciones/${index}`).update({
+            limpiada_por: ''
+        });
+    } else {
+        openCleanModal(index);
+    }
+};
+
+window.openCleanModal = function(index) {
+    selectedFunctionIndex = index;
+    const input = document.getElementById('cleaner-name-input');
+    if (input) input.value = '';
+    document.getElementById('clean-modal').classList.remove('hidden');
+    setTimeout(() => input && input.focus(), 100);
+};
+
+window.closeCleanModal = function() {
+    selectedFunctionIndex = null;
+    document.getElementById('clean-modal').classList.add('hidden');
+};
+
+window.confirmClean = function() {
+    const input = document.getElementById('cleaner-name-input');
+    const name = input ? input.value.trim() : '';
+
+    if (!name) {
+        alert("Por favor escribe quién limpió la sala.");
+        return;
+    }
+
+    if (selectedFunctionIndex !== null) {
+        db.ref(`horario_activo/funciones/${selectedFunctionIndex}`).update({
+            limpiada_por: name
+        });
+    }
+
+    closeCleanModal();
+};
+
+window.handleDelayButtonClick = function(index, isDesfasada) {
+    if (isDesfasada) {
+        db.ref(`horario_activo/funciones/${index}`).update({
+            is_desfasada: false,
+            desfase_minutos: 0
+        });
+    } else {
+        openDelayModal(index);
+    }
+};
+
+window.openDelayModal = function(index) {
+    selectedFunctionIndex = index;
+    const input = document.getElementById('delay-minutes-input');
+    if (input) input.value = '';
+    document.getElementById('delay-modal').classList.remove('hidden');
+    setTimeout(() => input && input.focus(), 100);
+};
+
+window.closeDelayModal = function() {
+    selectedFunctionIndex = null;
+    document.getElementById('delay-modal').classList.add('hidden');
+};
+
+window.confirmDelay = function() {
+    const input = document.getElementById('delay-minutes-input');
+    const minutes = parseInt(input.value, 10);
+
+    if (isNaN(minutes) || minutes <= 0) {
+        alert("Por favor ingresa una cantidad de minutos válida.");
+        return;
+    }
+
+    if (selectedFunctionIndex !== null) {
+        db.ref(`horario_activo/funciones/${selectedFunctionIndex}`).update({
+            is_desfasada: true,
+            desfase_minutos: minutes
+        });
+    }
+
+    closeDelayModal();
+};
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+}
