@@ -10,6 +10,50 @@
     <!-- Firebase SDKs Compat -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <style>
+        /* Estilos del distintivo del desarrollador en la esquina inferior */
+        .developer-badge {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(18, 18, 18, 0.75);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #aaa;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .developer-badge i {
+            color: #3b82f6;
+            font-size: 12px;
+        }
+
+        .developer-badge strong {
+            color: #e5e7eb;
+            font-weight: 600;
+        }
+
+        @media (max-width: 480px) {
+            .developer-badge {
+                bottom: 8px;
+                right: 8px;
+                font-size: 10px;
+                padding: 5px 10px;
+            }
+        }
+    </style>
 </head>
 <body>
 
@@ -90,6 +134,12 @@
                 </div>
             </form>
         </div>
+    </div>
+
+    <!-- Cuadro del desarrollador en la esquina inferior -->
+    <div class="developer-badge">
+        <i class="fa-solid fa-code"></i>
+        <span>Desarrollador: <strong>Jorge Eduardo López Mendoza</strong></span>
     </div>
 
     <script src="js/index.js"></script>
